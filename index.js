@@ -51,12 +51,10 @@ function Backend (uri, cb) {
     else if (name === 'git-receive-pack') {}
     else return error('unsupported git service');
     
-    if (this.info) {
-        process.nextTick(function () {
-            var service = self._createService({ name: name, info: true });
-            self.emit('service', service);
-        });
-    }
+    var service = self._createService({ name: name, info: this.info });
+    process.nextTick(function () {
+        self.emit('service', service);
+    });
     
     function error (msg) {
         var err = typeof msg === 'string' ? new Error(msg) : msg;
@@ -112,5 +110,5 @@ Backend.prototype._write = function (buf, enc, next) {
         this._buffer = buf;
         this._next = next;
     }
-    else this._serviceStream.write(buf, env, next);
+    else this._serviceStream.write(buf, enc, next);
 };
