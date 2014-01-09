@@ -1,7 +1,9 @@
-var Transform = require('stream').Transform;
+var Duplex = require('stream').Duplex;
 var inherits = require('inherits');
 var url = require('url');
 var qs = require('querystring');
+
+var Service = require('./lib/service.js');
 
 var regex = {
     //         last           commit
@@ -14,12 +16,12 @@ var regex = {
 };
 
 module.exports = Backend;
-inherits(Backend, Transform);
+inherits(Backend, Duplex);
 
 function Backend (uri, cb) {
     if (!(this instanceof Backend)) return new Backend(uri, cb);
     var self = this;
-    Transform.call(this);
+    Duplex.call(this);
     
     if (cb) {
         this.on('service', function (s) { cb(null, s) });
@@ -30,21 +32,31 @@ function Backend (uri, cb) {
     catch (err) { return error(msg) }
     
     var u = url.parse(uri);
-    if (/\.\/|\.\.|/.test(u.pathname)) return error('invalid git path');
+    if (/\.\/|\.\./.test(u.pathname)) return error('invalid git path');
     
     this.parsed = false;
     var parts = u.pathname.split('/');
+    var name;
+    
     if (/\/info\/refs$/.test(u.pathname)) {
         var params = qs.parse(u.query);
-        this.service = params.service;
+        name = params.service;
+        this.info = true;
     }
     else {
-        this.service = parts[parts.length-1];
+        name = parts[parts.length-1];
     }
     
-    if (this.service === 'git-upload-pack') {}
-    else if (this.service === 'git-receive-pack') {}
-    else error('unsupported git service');
+    if (name === 'git-upload-pack') {}
+    else if (name === 'git-receive-pack') {}
+    else return error('unsupported git service');
+    
+    if (this.info) {
+        process.nextTick(function () {
+            var service = self._createService({ name: name, info: true });
+            self.emit('service', service);
+        });
+    }
     
     function error (msg) {
         var err = typeof msg === 'string' ? new Error(msg) : msg;
@@ -52,20 +64,53 @@ function Backend (uri, cb) {
     }
 }
 
-Backend.prototype._transform = function (buf, enc, next) {
-    if (this.service === 'git-upload-pack') {
-    }
-    else if (this.service === 'git-receive-pack') {
-    }
+Backend.prototype._createService = function (opts) {
+    var self = this;
+    
+    var service = new Service(opts, function (stream) {
+        self._serviceStream = stream;
+        stream._read = function (n) { self._read(n) };
+        stream._write = function (buf, enc, next) {
+            self.push(buf);
+            next();
+        };
+        
+        read();
+        stream.on('readable', read);
+        
+        stream.on('finish', function () {
+            if (!self._bands) self.push(null);
+        });
+        
+        if (self._ready) self._read(self._ready);
+        if (self._next) {
+            var buf = self._buffer;
+            var next = self._next;
+            self._buffer = null;
+            self._next = null;
+            stream.write(buf);
+            next();
+        }
+        
+        function read () {
+            var chunk;
+            while (null !== (chunk = stream.read())) {
+                self.push(chunk);
+            }
+        }
+    });
+    self._service = service;
+    return service;
 };
 
-Backend.prototype._flush = function (next) {
+Backend.prototype._read = function (n) {
+    if (!this._serviceStream) this._ready = n;
 };
 
-function infoPrelude (service) {
-    function pack (s) {
-        var n = (4 + s.length).toString(16);
-        return Array(4 - n.length + 1).join('0') + n + s;
+Backend.prototype._write = function (buf, enc, next) {
+    if (!this._serviceStream) {
+        this._buffer = buf;
+        this._next = next;
     }
-    return pack('# service=git-' + service + '\n') + '0000';
-}
+    else this._serviceStream.write(buf, env, next);
+};

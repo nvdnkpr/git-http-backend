@@ -10,8 +10,9 @@ var server = http.createServer(function (req, res) {
     req.pipe(backend(req.url, function (err, service) {
         if (err) return res.end(err + '\n');
         
-        var ps = spawn(service.name, [ '--stateless-rpc', dir ]);
+        var ps = spawn(service.name, service.args.concat(dir));
         ps.stdout.pipe(service.createStream()).pipe(ps.stdin);
+        
     })).pipe(res);
 });
 server.listen(5000);
