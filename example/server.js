@@ -7,6 +7,7 @@ var server = http.createServer(function (req, res) {
     var repo = req.url.split('/')[1];
     var dir = path.join(__dirname, 'repos', repo);
     
+    console.log(req.url);
     req.pipe(backend(req.url, function (err, service) {
         if (err) return res.end(err + '\n');
         
