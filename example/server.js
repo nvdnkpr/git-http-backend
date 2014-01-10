@@ -10,7 +10,7 @@ var server = http.createServer(function (req, res) {
     req.pipe(backend(req.url, function (err, service) {
         if (err) return res.end(err + '\n');
         
-        console.log(service.action, repo, service.branch);
+        console.log(service.action, repo, service.fields);
         
         var ps = spawn(service.cmd, service.args.concat(dir));
         ps.stdout.pipe(service.createStream()).pipe(ps.stdin);
