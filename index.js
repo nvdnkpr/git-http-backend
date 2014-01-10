@@ -63,7 +63,16 @@ function Backend (uri, cb) {
 }
 
 Backend.prototype._read = function (n) {
+    this._ready = n;
 };
 
 Backend.prototype._write = function (buf, enc, next) {
+    if (this._stream) {
+        this._stream.push(buf);
+        next();
+    }
+    else {
+        this._buffer = buf;
+        this._next = next;
+    }
 };
