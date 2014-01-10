@@ -6,13 +6,15 @@ var qs = require('querystring');
 var Service = require('./lib/service.js');
 
 var regex = {
-    //         last           commit
-    //            (branch|tag)  (tag version|branch name)
-    receive: '([0-9a-fA-F]+) ([0-9a-fA-F]+)'
+    'git-receive-pack': RegExp('([0-9a-fA-F]+) ([0-9a-fA-F]+)'
         + ' refs\/(heads|tags)\/(.*?)( |00|\u0000)'
         + '|^(0000)$'
-    ,
-    upload: '^\\S+ ([0-9a-fA-F]+)'
+    ),
+    'git-upload-pack': /^\S+ ([0-9a-fA-F]+)/
+};
+var fields = {
+    'git-receive-pack': [ 'last', 'head', 'type', 'name' ],
+    'git-upload-pack': [ 'head' ]
 };
 
 module.exports = Backend;
@@ -36,25 +38,26 @@ function Backend (uri, cb) {
     
     this.parsed = false;
     var parts = u.pathname.split('/');
-    var name;
     
     if (/\/info\/refs$/.test(u.pathname)) {
         var params = qs.parse(u.query);
-        name = params.service;
+        this.service = params.service;
         this.info = true;
     }
     else {
-        name = parts[parts.length-1];
+        this.service = parts[parts.length-1];
     }
     
-    if (name === 'git-upload-pack') {}
-    else if (name === 'git-receive-pack') {}
+    if (this.service === 'git-upload-pack') {}
+    else if (this.service === 'git-receive-pack') {}
     else return error('unsupported git service');
     
-    var service = new Service({ name: name, info: this.info }, self);
-    process.nextTick(function () {
-        self.emit('service', service);
-    });
+    if (this.info) {
+        var service = new Service({ cmd: this.service, info: true }, self);
+        process.nextTick(function () {
+            self.emit('service', service);
+        });
+    }
     
     function error (msg) {
         var err = typeof msg === 'string' ? new Error(msg) : msg;
@@ -73,9 +76,35 @@ Backend.prototype._read = function (n) {
 Backend.prototype._write = function (buf, enc, next) {
     if (this._stream) {
         this._stream.push(buf);
+        this._next = next;
+        return;
+    }
+    else if (this.info) {
+        this._buffer = buf;
+        this._next = next;
+        return;
+    }
+    
+    if (this._prev) buf = Buffer.concat([ this._prev, buf ]);
+    
+    var m, s = buf.slice(0,512).toString('utf8');
+    if (m = regex[this.service].exec(s)) {
+        this._prev = null;
+        this._buffer = buf;
+        this._next = next;
+        
+        var keys = fields[this.service];
+        var row = { cmd: this.service };
+        for (var i = 0; i < keys.length; i++) {
+            row[keys[i]] = m[i+1];
+        }
+        this.emit('service', new Service(row, this));
+    }
+    else if (buf.length >= 512) {
+        return this.emit('error', new Error('unrecognized input'));
     }
     else {
-        this._buffer = buf;
+        this._prev = buf;
+        next();
     }
-    this._next = next;
 };
