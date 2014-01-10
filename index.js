@@ -51,7 +51,7 @@ function Backend (uri, cb) {
     else if (name === 'git-receive-pack') {}
     else return error('unsupported git service');
     
-    var service = self._createService({ name: name, info: this.info });
+    var service = new Service({ name: name, info: this.info }, self);
     process.nextTick(function () {
         self.emit('service', service);
     });
@@ -62,53 +62,8 @@ function Backend (uri, cb) {
     }
 }
 
-Backend.prototype._createService = function (opts) {
-    var self = this;
-    
-    var service = new Service(opts, function (stream) {
-        self._serviceStream = stream;
-        stream._read = function (n) { self._read(n) };
-        stream._write = function (buf, enc, next) {
-            self.push(buf);
-            next();
-        };
-        
-        read();
-        stream.on('readable', read);
-        
-        stream.on('finish', function () {
-            if (!self._bands) self.push(null);
-        });
-        
-        if (self._ready) self._read(self._ready);
-        if (self._next) {
-            var buf = self._buffer;
-            var next = self._next;
-            self._buffer = null;
-            self._next = null;
-            stream.write(buf);
-            next();
-        }
-        
-        function read () {
-            var chunk;
-            while (null !== (chunk = stream.read())) {
-                self.push(chunk);
-            }
-        }
-    });
-    self._service = service;
-    return service;
-};
-
 Backend.prototype._read = function (n) {
-    if (!this._serviceStream) this._ready = n;
 };
 
 Backend.prototype._write = function (buf, enc, next) {
-    if (!this._serviceStream) {
-        this._buffer = buf;
-        this._next = next;
-    }
-    else this._serviceStream.write(buf, enc, next);
 };
