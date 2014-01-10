@@ -92,6 +92,12 @@ http.createServer(function (req, res) {
 If you pass in a `cb`, it will register an errback for the `'service'` and
 `'error'` events.
 
+## var sb = b.createBand()
+
+Return a writable side-band stream `sb`.
+
+For `info` actions, you can write a response back to the user with this stream.
+
 # events
 
 ## b.on('service', function (service) {})
